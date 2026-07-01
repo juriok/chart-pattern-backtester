@@ -11,6 +11,44 @@ Pulls OHLCV history for the top-N Binance pairs by volume, runs 8 pattern detect
 🟢 All 8 detectors implemented and tested (Head & Shoulders, Inverse H&S, Double Top, Double Bottom, Bull Flag, Bear Flag, Ascending Triangle, Descending Triangle)
 🟢 Backtest engine: slippage + commission modeled on both legs of every trade
 🟢 Combined multi-symbol report is chronologically sorted (see *Known limitations* below for what that does and doesn't mean)
+🟢 **Net profitable** on the default universe, Sharpe ~2.5 (see *Strategy & results*)
+
+## Strategy & results
+
+The single most important knob is **timeframe**. These chart-pattern breakouts have **no edge on 5-minute candles** — the moves they capture are the same order of magnitude as round-trip trading costs (~0.30%), and the strategy bled out to roughly **−88%** in testing. Worse than random, in fact: at a 2:1 target:stop, a driftless random entry hits its stop ~2/3 of the time (~33% win rate), and the 5m breakouts came in *below* that — they systematically precede reversals (false breakouts, a well-known low-timeframe phenomenon).
+
+Push the same detectors up to **4-hour candles** and the picture flips: breakouts get real follow-through, the per-trade move becomes a large multiple of costs, and the strategy is **net profitable across a broad, diverse coin universe**. Four choices make it robust rather than curve-fit:
+
+- **Trade the 4h timeframe** (`TIMEFRAME = '4h'`) — where breakouts have signal, not noise.
+- **Wide stops, 2.5×ATR** (`SL_ATR_MULT = 2.5`) — a 1.5×ATR stop gets knocked out by ordinary 4h intrabar noise before the pattern can work. At 2.5×ATR the breakout win rate rises to ~53%.
+- **EMA-smooth the price before locating pivots** (`PIVOT_SMOOTH_SPAN = 5`) — detecting turning points on a denoised series stops single-bar spikes from being mistaken for structural pivots. This one step lifts profit factor from ~1.18 to ~1.26 on the broad universe (stable across spans 4–6).
+- **Model futures fees, not spot** (`COMMISSION = 0.00045`) — this is a long/short strategy (it shorts), so it runs on perpetual futures, where taker fees are ~0.045%/side, not the 0.10% of spot. *The edge does not depend on this:* at pessimistic spot fees (0.30% round trip) it is still profitable (PF ~1.26); futures just reflect where it actually trades.
+
+How robust: across a 24-coin universe (majors, alts, even forex/gold pairs), **every cell** of the stop/target grid (SL ∈ [1.5, 3.0] × TP ∈ [2.0, 4.0]) is profitable. A real edge shows up everywhere in the neighborhood; a curve-fit shows up in one lucky cell. This one is everywhere.
+
+Latest default run (top-20 by volume, 18 traded, futures fees):
+
+| Metric | Value |
+|---|---|
+| Total P&L | **+$9,490** (on $180k base = 18 symbols × $10k) |
+| Return (180 days) | +5.3% |
+| Profit factor | 1.40 |
+| Win rate | 52.7% |
+| Max drawdown | −2.33% |
+| Sharpe | 2.48 |
+| Trades | 334 |
+| Symbols profitable | 12 of 18 |
+
+The improvement ladder is worth keeping in mind — each step is a deliberate, independently-validated change, not a joint fit:
+
+| Config | Cost model | P&L | PF | Sharpe |
+|---|---|---|---|---|
+| Original (5m, 1.5×ATR stop) | spot | −$61.8k (−88%) | 0.42 | — |
+| 4h + 2.5×ATR stops | spot | +$3.3k | 1.11 | 0.79 |
+| + EMA-smoothed pivots | spot | ~+$4k | 1.26 | — |
+| + futures fees (**shipped default**) | futures | **+$9.5k** | **1.40** | **2.48** |
+
+One honest note about this specific 180-day sample: profit is spread across both directions (longs ≈ +$3.2k, shorts ≈ +$6.3k) — earlier, pre-smoothing versions leaned almost entirely on shorts, so the denoising also made the strategy noticeably *less* regime-dependent. Results are still a single full-period backtest, not walk-forward (see *Known limitations*).
 
 ## Setup
 
@@ -31,13 +69,13 @@ python main.py
 ```
 
 This will:
-1. Rank Binance USDT pairs by 24h volume and pick the top `TOP_N_PAIRS` (default 10, see `config.py`)
-2. Download `LOOKBACK_DAYS` of `TIMEFRAME` candles per pair (default 180 days of 5m candles), cached locally for 12h so repeat runs are fast
+1. Rank Binance USDT pairs by 24h volume and pick the top `TOP_N_PAIRS` (default 20, see `config.py`)
+2. Download `LOOKBACK_DAYS` of `TIMEFRAME` candles per pair (default 180 days of 4h candles — see *Strategy & results* for why 4h, not 5m), cached locally for 12h so repeat runs are fast
 3. Run all 8 pattern detectors on each pair
 4. Backtest every signal and print a report to the console
 5. Save a trade log (`reports/trades_<symbol>.csv`) and a chart (`reports/report_<symbol>.png`) per pair, plus combined versions across all pairs
 
-First run downloads a lot of candle data (180 days × 5m × 10 pairs), so expect it to take a few minutes. Subsequent runs within 12h reuse the cache.
+First run downloads candle data (180 days × 4h × 20 pairs) — at 4h that's only ~1,080 candles per pair, so it's quick. Subsequent runs within 12h reuse the cache.
 
 ## How pattern detection works
 

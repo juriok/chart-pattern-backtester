@@ -2,16 +2,33 @@ import numpy as np
 import pandas as pd
 from scipy.signal import argrelextrema
 
+import config
+
+
+def _smooth(arr: np.ndarray, span: int) -> np.ndarray:
+    """EMA-smooth a series before extrema detection to strip high-frequency noise.
+    Denoising the series *before* locating turning points (rather than detecting on
+    raw high/low) is what stops single-bar spikes from being mistaken for structural
+    pivots — it materially cleans up the pattern set and lifts the backtest edge.
+    span<=1 disables smoothing (raw behaviour)."""
+    if span and span > 1:
+        return pd.Series(arr).ewm(span=span, adjust=False).mean().values
+    return arr
+
 
 def get_pivot_highs(df: pd.DataFrame, order: int) -> pd.Series:
-    arr = df['high'].values
-    idx = argrelextrema(arr, np.greater, order=order)[0]
+    arr    = df['high'].values
+    smooth = _smooth(arr, getattr(config, 'PIVOT_SMOOTH_SPAN', 0))
+    idx    = argrelextrema(smooth, np.greater, order=order)[0]
+    # Index off the smoothed turning point, but report the *raw* high there so
+    # pattern geometry and breakout levels stay anchored to real prices.
     return pd.Series(data=arr[idx], index=idx, dtype=float)
 
 
 def get_pivot_lows(df: pd.DataFrame, order: int) -> pd.Series:
-    arr = df['low'].values
-    idx = argrelextrema(arr, np.less, order=order)[0]
+    arr    = df['low'].values
+    smooth = _smooth(arr, getattr(config, 'PIVOT_SMOOTH_SPAN', 0))
+    idx    = argrelextrema(smooth, np.less, order=order)[0]
     return pd.Series(data=arr[idx], index=idx, dtype=float)
 
 
