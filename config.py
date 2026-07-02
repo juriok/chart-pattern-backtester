@@ -73,7 +73,14 @@ MAX_POSITION_PCT = 0.5      # hard cap: a single trade can never exceed 50% of c
 # strategy is still net profitable (PF ~1.26 on the broad universe). Futures fees
 # just reflect where it would actually trade and roughly double the net return.
 INITIAL_CAPITAL  = 10_000
-RISK_PER_TRADE   = 0.02
+# % of current POOL equity risked per trade (portfolio engine). 0.5% looks
+# small but the pool runs up to MAX_PORTFOLIO_POSITIONS trades at once, so
+# portfolio heat is ~15% at full load. The 2y sweep shows risk/notional trace a
+# pure leverage line (PF ~1.29-1.31 in EVERY cell — the edge doesn't change,
+# only how hard it's geared): 0.5%/2x → 3.75x, DD -24%; 0.75%/3x → 7.1x,
+# DD -37%. 0.5% + 2x notional is the shipped point: best PF, most trades
+# (diversification), drawdown still sane for live/paper evaluation.
+RISK_PER_TRADE   = 0.005
 COMMISSION       = 0.00045
 SLIPPAGE         = 0.0001
 
@@ -97,6 +104,17 @@ MAX_CONCURRENT_POSITIONS = 3
 # and this strategy is short-heavy, so it net *collects* funding. Accrued
 # pro-rata on bars held, on entry notional. Set to 0 to disable.
 FUNDING_RATE_8H  = 0.0001
+
+# ─── Portfolio (shared capital pool — backtest/portfolio.py) ────────────────
+# One equity pool across all symbols; INITIAL_CAPITAL is the WHOLE account.
+# RISK_PER_TRADE above is % of current *pool* equity per trade.
+# At 0.5% risk the position-count cap stops binding around ~25 open trades
+# (cap 30/40/60 all give identical results) — the notional cap below is the
+# real constraint. Raising it to 3x lifts 2y return 3.75x→5x but DD -24%→-33%:
+# pure leverage, not alpha. 2x matches what a real futures account can carry
+# comfortably.
+MAX_PORTFOLIO_POSITIONS   = 30    # open trades across all symbols
+MAX_PORTFOLIO_NOTIONAL_PCT = 2.0  # total open notional <= 2x equity (leverage cap)
 
 # ─── Report ─────────────────────────────────────────────────────────────────
 REPORT_DIR = 'reports'

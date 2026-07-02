@@ -26,6 +26,8 @@ class Trade:
     exit_price:  float = 0.0
     pnl:         float = 0.0
     result:      str   = ''   # 'tp' | 'sl' | 'timeout'
+    entry_ts:    object = None   # pd.Timestamp — exact cross-symbol chronology
+    exit_ts:     object = None
 
 
 class BacktestEngine:
