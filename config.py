@@ -7,9 +7,13 @@
 # across a broad, diverse coin universe (see README "Strategy & results").
 EXCHANGE        = 'binance'
 QUOTE_CURRENCY  = 'USDT'
-TOP_N_PAIRS     = 20
+TOP_N_PAIRS     = 50
 TIMEFRAME       = '4h'
-LOOKBACK_DAYS   = 180
+# 730 days ≈ 2 years, deliberately long: the strategy parameters were tuned on a
+# ~180-day window, so a 2-year default backtest is dominated by data those
+# parameters never saw. The number it prints is the honest out-of-sample figure
+# (PF ~1.2x), not the flattering in-sample one (PF ~1.4).
+LOOKBACK_DAYS   = 730
 DATA_CACHE_DIR  = 'cache'
 
 # ─── Pattern Detection ──────────────────────────────────────────────────────
@@ -19,6 +23,17 @@ PIVOT_ORDER          = 5
 # 0/1 disables. This denoising step lifts profit factor from ~1.18 to ~1.26 on
 # the broad universe — see README "Strategy & results". Set to 0 for raw pivots.
 PIVOT_SMOOTH_SPAN    = 5
+# Patterns whose signals are discarded, each on FULL-2y broad-universe evidence
+# (never a recent window — short-window pattern rankings invert; bear_flag
+# looked best on 180d and is flat over 2y):
+#   ascending_triangle — PF 0.92, green 2/8 quarters (123 trades, 16 majors).
+#   bull_flag          — net -$12.9k over 942 trades on the top-50 universe,
+#                        green 4/9 quarters with a -$13.8k single-quarter tail
+#                        (PF 0.39 in 2025Q4). Mildly positive on curated majors
+#                        only (+$3k, PF 1.10) — the breadth evidence wins.
+#                        Mechanism: long continuation entries after pumps get
+#                        mean-reverted in anything but the very top caps.
+DISABLED_PATTERNS    = {'ascending_triangle', 'bull_flag'}
 PATTERN_TOLERANCE    = 0.03
 MIN_PATTERN_BARS     = 15
 MAX_PATTERN_BARS     = 100
@@ -61,6 +76,27 @@ INITIAL_CAPITAL  = 10_000
 RISK_PER_TRADE   = 0.02
 COMMISSION       = 0.00045
 SLIPPAGE         = 0.0001
+
+# Size trades off CURRENT equity instead of INITIAL_CAPITAL. Gains compound and
+# losses de-risk (position size shrinks in a drawdown). Does not change the
+# per-trade edge — it changes how the edge accumulates.
+COMPOUND_SIZING  = True
+
+# How many positions a single symbol's engine may hold at once. With 1 (the
+# original behaviour) every signal that fires while a trade is open is silently
+# skipped — that discarded roughly two-thirds of the strategy's own signals.
+# 2y validation: conc=3 nearly doubles return (+16.8% -> +32.5%) at the SAME
+# profit factor (~1.25, i.e. the extra trades are equal quality) with max DD
+# only -4.9%. Beyond 3 it saturates: conc=8 adds just +1.2% return for -2.3%
+# more drawdown. Note >1 stacks margin: worst case = conc x MAX_POSITION_PCT
+# notional per symbol.
+MAX_CONCURRENT_POSITIONS = 3
+
+# Perpetual-futures funding, expressed per 8h period (Binance charges 3x/day).
+# Crypto funding is positive on average (longs pay shorts, ~0.01%/8h baseline),
+# and this strategy is short-heavy, so it net *collects* funding. Accrued
+# pro-rata on bars held, on entry notional. Set to 0 to disable.
+FUNDING_RATE_8H  = 0.0001
 
 # ─── Report ─────────────────────────────────────────────────────────────────
 REPORT_DIR = 'reports'

@@ -4,6 +4,14 @@ import numpy as np
 import config
 
 
+def _bar_hours() -> float:
+    """Duration of one bar in hours, parsed from config.TIMEFRAME ('5m','4h','1d')."""
+    tf   = config.TIMEFRAME
+    unit = tf[-1].lower()
+    val  = float(tf[:-1])
+    return {'m': val / 60.0, 'h': val, 'd': val * 24.0}[unit]
+
+
 @dataclass
 class Trade:
     symbol:      str
@@ -29,14 +37,15 @@ class BacktestEngine:
 
     def run(self) -> List[Trade]:
         trades: List[Trade] = []
-        open_pos: Optional[Trade] = None
-        sig_ptr = 0
-        n = len(self.df)
+        open_pos: List[Trade] = []
+        sig_ptr  = 0
+        n        = len(self.df)
+        max_conc = getattr(config, 'MAX_CONCURRENT_POSITIONS', 1)
 
         for i in range(n):
-            # ── 1. Check exit conditions for open position ───────────────
-            if open_pos is not None:
-                open_pos = self._check_exit(open_pos, i, trades)
+            # ── 1. Check exit conditions for every open position ─────────
+            open_pos = [p for p in open_pos
+                        if self._check_exit(p, i, trades) is not None]
 
             # ── 2. Consume signals generated at bar i (enter at bar i+1) ─
             while (sig_ptr < len(self.signals) and
@@ -44,8 +53,8 @@ class BacktestEngine:
                 sig = self.signals[sig_ptr]
                 sig_ptr += 1
 
-                if open_pos is not None:
-                    continue   # already in a position
+                if len(open_pos) >= max_conc:
+                    continue   # all position slots occupied
 
                 entry_bar = i + 1
                 if entry_bar >= n:
@@ -53,14 +62,14 @@ class BacktestEngine:
 
                 trade = self._open_trade(sig, entry_bar)
                 if trade is not None:
-                    open_pos = trade
+                    open_pos.append(trade)
 
-        # ── Force-close any remaining position at last bar ───────────────
-        if open_pos is not None:
-            last       = n - 1
+        # ── Force-close any remaining positions at last bar ──────────────
+        last = n - 1
+        for pos in open_pos:
             exit_price = self._slip(float(self.df['close'].iloc[last]),
-                                    open_pos.direction, exit=True)
-            self._close(open_pos, last, exit_price, 'timeout', trades)
+                                    pos.direction, exit=True)
+            self._close(pos, last, exit_price, 'timeout', trades)
 
         return trades
 
@@ -97,13 +106,17 @@ class BacktestEngine:
         if risk < 1e-10:
             return None
 
-        qty = (config.INITIAL_CAPITAL * config.RISK_PER_TRADE) / risk
+        # Sizing base: current equity when COMPOUND_SIZING (gains compound,
+        # drawdowns automatically de-risk), else fixed INITIAL_CAPITAL.
+        base = (self.equity if getattr(config, 'COMPOUND_SIZING', False)
+                else config.INITIAL_CAPITAL)
+        qty = (base * config.RISK_PER_TRADE) / risk
 
         # Hard safety cap: even with a legitimate ATR, never let a single
         # trade's notional exposure exceed MAX_POSITION_PCT of capital.
         # This is a backstop against any other edge case that could inflate
         # qty, not just the near-zero-ATR case above.
-        max_qty = (config.INITIAL_CAPITAL * config.MAX_POSITION_PCT) / entry
+        max_qty = (base * config.MAX_POSITION_PCT) / entry
         qty = min(qty, max_qty)
 
         return Trade(symbol=self.symbol, pattern=sig['pattern'],
@@ -157,10 +170,20 @@ class BacktestEngine:
         else:
             gross = (pos.entry_price - exit_price) * pos.qty
 
-        commission   = (pos.entry_price + exit_price) * pos.qty * config.COMMISSION
+        commission = (pos.entry_price + exit_price) * pos.qty * config.COMMISSION
+
+        # Perp funding, accrued pro-rata on entry notional over bars held.
+        # Positive FUNDING_RATE_8H means longs pay, shorts collect (the
+        # long-run crypto average). Zero disables.
+        frate   = getattr(config, 'FUNDING_RATE_8H', 0.0)
+        hours   = (exit_bar - pos.entry_bar) * _bar_hours()
+        funding = pos.entry_price * pos.qty * frate * (hours / 8.0)
+        if pos.direction == 'long':
+            funding = -funding
+
         pos.exit_bar   = exit_bar
         pos.exit_price = exit_price
-        pos.pnl        = gross - commission
+        pos.pnl        = gross - commission + funding
         pos.result     = result
         trades.append(pos)
         self.equity   += pos.pnl

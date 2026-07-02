@@ -9,20 +9,30 @@ from patterns.triangles          import detect_ascending_triangle, detect_descen
 
 
 def detect_all(df: pd.DataFrame) -> List[Dict]:
-    """Run every pattern detector and return a time-sorted signal list."""
+    """Run every enabled pattern detector and return a time-sorted signal list.
+
+    Detectors named in config.DISABLED_PATTERNS are skipped entirely — used to
+    drop patterns with proven negative out-of-sample expectancy (see config)."""
     ph  = get_pivot_highs(df, config.PIVOT_ORDER)
     pl  = get_pivot_lows (df, config.PIVOT_ORDER)
     atr = compute_atr    (df, config.ATR_PERIOD)
 
+    detectors = {
+        'head_and_shoulders'        : lambda: detect_hs                  (df, ph, pl),
+        'inverse_head_and_shoulders': lambda: detect_inverse_hs          (df, ph, pl),
+        'double_top'                : lambda: detect_double_top          (df, ph, pl),
+        'double_bottom'             : lambda: detect_double_bottom       (df, ph, pl),
+        'bull_flag'                 : lambda: detect_bull_flag           (df),
+        'bear_flag'                 : lambda: detect_bear_flag           (df),
+        'ascending_triangle'        : lambda: detect_ascending_triangle  (df, ph, pl),
+        'descending_triangle'       : lambda: detect_descending_triangle (df, ph, pl),
+    }
+    disabled = getattr(config, 'DISABLED_PATTERNS', set()) or set()
+
     signals: List[Dict] = []
-    signals += detect_hs                  (df, ph, pl)
-    signals += detect_inverse_hs          (df, ph, pl)
-    signals += detect_double_top          (df, ph, pl)
-    signals += detect_double_bottom       (df, ph, pl)
-    signals += detect_bull_flag           (df)
-    signals += detect_bear_flag           (df)
-    signals += detect_ascending_triangle  (df, ph, pl)
-    signals += detect_descending_triangle (df, ph, pl)
+    for name, detect in detectors.items():
+        if name not in disabled:
+            signals += detect()
 
     for sig in signals:
         i = sig['bar_index']

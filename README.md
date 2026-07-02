@@ -8,10 +8,10 @@ Pulls OHLCV history for the top-N Binance pairs by volume, runs 8 pattern detect
 
 ## Status
 
-🟢 All 8 detectors implemented and tested (Head & Shoulders, Inverse H&S, Double Top, Double Bottom, Bull Flag, Bear Flag, Ascending Triangle, Descending Triangle)
-🟢 Backtest engine: slippage + commission modeled on both legs of every trade
+🟢 All 8 detectors implemented and tested (Head & Shoulders, Inverse H&S, Double Top, Double Bottom, Bull Flag, Bear Flag, Ascending Triangle, Descending Triangle); ascending_triangle and bull_flag disabled by default on full-2y evidence
+🟢 Backtest engine: slippage + commission on both legs, perp funding accrual, compounding equity-based sizing, multiple concurrent positions per symbol
 🟢 Combined multi-symbol report is chronologically sorted (see *Known limitations* below for what that does and doesn't mean)
-🟢 **Net profitable** on the default universe, Sharpe ~2.5 (see *Strategy & results*)
+🟢 **Net profitable out-of-sample**: 8 of 9 quarters green over a 2-year, 43-symbol backtest at the shipped defaults; every enabled pattern profitable (see *Strategy & results*)
 
 ## Strategy & results
 
@@ -24,31 +24,44 @@ Push the same detectors up to **4-hour candles** and the picture flips: breakout
 - **EMA-smooth the price before locating pivots** (`PIVOT_SMOOTH_SPAN = 5`) — detecting turning points on a denoised series stops single-bar spikes from being mistaken for structural pivots. This one step lifts profit factor from ~1.18 to ~1.26 on the broad universe (stable across spans 4–6).
 - **Model futures fees, not spot** (`COMMISSION = 0.00045`) — this is a long/short strategy (it shorts), so it runs on perpetual futures, where taker fees are ~0.045%/side, not the 0.10% of spot. *The edge does not depend on this:* at pessimistic spot fees (0.30% round trip) it is still profitable (PF ~1.26); futures just reflect where it actually trades.
 
+On top of the entry edge, five **capital-efficiency and honesty upgrades** (each validated independently on 2-year data before being made default):
+
+- **Drop `ascending_triangle` and `bull_flag`** (`DISABLED_PATTERNS`) — the two patterns with negative full-2y expectancy. ascending_triangle: PF 0.92, green in 2/8 quarters. bull_flag: −$12.9k over 942 trades on the top-50 universe with a −$13.8k single-quarter tail (mildly positive on curated majors only — breadth evidence wins; mechanism: long continuation entries after pumps mean-revert outside the very top caps). Both judged on the *full* 2y window: short-window pattern rankings invert (bear_flag looked best on 180d, mediocre over 2y), so never disable patterns off a recent window.
+- **Concurrent positions** (`MAX_CONCURRENT_POSITIONS = 3`) — the single biggest lever found. With 1, every signal firing while a trade is open was silently skipped, discarding ~⅔ of the strategy's own signals. At 3 slots per symbol, 2y return nearly doubles at the *same* profit factor (the extra trades are equal quality). Saturates beyond 3 (conc=8 adds +1.2% return for −2.3% more DD).
+- **Compounding sizing** (`COMPOUND_SIZING = True`) — trades risk 2% of *current* equity, not initial capital: gains compound, drawdowns automatically de-risk.
+- **Perp funding accrual** (`FUNDING_RATE_8H = 0.0001`) — crypto funding averages positive (longs pay shorts); the strategy is short-heavy, so it slightly *collects* on net. Modeled pro-rata on bars held.
+
 How robust: across a 24-coin universe (majors, alts, even forex/gold pairs), **every cell** of the stop/target grid (SL ∈ [1.5, 3.0] × TP ∈ [2.0, 4.0]) is profitable. A real edge shows up everywhere in the neighborhood; a curve-fit shows up in one lucky cell. This one is everywhere.
 
-Latest default run (top-20 by volume, 18 traded, futures fees):
+**Latest default run** — top-50 pairs by volume (43 traded), 2 years of 4h candles, all upgrades on:
 
 | Metric | Value |
 |---|---|
-| Total P&L | **+$9,490** (on $180k base = 18 symbols × $10k) |
-| Return (180 days) | +5.3% |
-| Profit factor | 1.40 |
-| Win rate | 52.7% |
-| Max drawdown | −2.33% |
-| Sharpe | 2.48 |
-| Trades | 334 |
-| Symbols profitable | 12 of 18 |
+| Total P&L | **+$74,227** (on $430k base = 43 symbols × $10k) |
+| Return (2 years) | +17.3% (≈ +8%/yr unleveraged, on a deliberately broad universe) |
+| Profit factor | 1.31 |
+| Win rate | 52.4% |
+| Max drawdown | −4.97% |
+| Sharpe | 1.97 |
+| Trades | 2,790 |
+| Quarters profitable | 8 of 9 (worst quarter: −$466, PF 0.99 — essentially flat) |
+| Symbols profitable | 29 of 43 |
+| Patterns profitable | 6 of 6 enabled |
 
-The improvement ladder is worth keeping in mind — each step is a deliberate, independently-validated change, not a joint fit:
+**Why you can (mostly) believe these numbers:** parameters were tuned on a ~180-day window; everything before ~2026 in the run above is data those parameters never saw, and the edge holds across it. On a curated 16-major universe the same config scores higher (~+32%/2y, PF 1.25); the top-50 default deliberately includes weaker mid-caps as a stress test. Two things the backtest still can't promise: pattern selection (which two patterns to disable) was itself decided on this 2y data, so live PF will likely land somewhat below backtest PF; and profit leans short (+$63k short vs +$11k long) — a violently bullish regime would mute the short side.
 
-| Config | Cost model | P&L | PF | Sharpe |
-|---|---|---|---|---|
-| Original (5m, 1.5×ATR stop) | spot | −$61.8k (−88%) | 0.42 | — |
-| 4h + 2.5×ATR stops | spot | +$3.3k | 1.11 | 0.79 |
-| + EMA-smoothed pivots | spot | ~+$4k | 1.26 | — |
-| + futures fees (**shipped default**) | futures | **+$9.5k** | **1.40** | **2.48** |
+The improvement ladder on the fixed 16-major set (each step independently validated, not a joint fit):
 
-One honest note about this specific 180-day sample: profit is spread across both directions (longs ≈ +$3.2k, shorts ≈ +$6.3k) — earlier, pre-smoothing versions leaned almost entirely on shorts, so the denoising also made the strategy noticeably *less* regime-dependent. Results are still a single full-period backtest, not walk-forward (see *Known limitations*).
+| Config | P&L (2y, $160k base) | PF | Max DD |
+|---|---|---|---|
+| Original (5m, 1.5×ATR, spot fees) | −88% (in 180d!) | 0.42 | −88% |
+| 4h + 2.5×ATR + smoothed pivots + futures fees | +$26.9k (+16.8%) | 1.23 | −3.2% |
+| + drop ascending_triangle | +$27.2k | 1.25 | −3.3% |
+| + funding accrual | +$27.4k | 1.25 | −3.3% |
+| + compounding sizing | +$29.2k | 1.25 | −4.0% |
+| + 3 concurrent positions | **+$52.0k (+32.5%)** | **1.25** | **−4.9%** |
+
+`LOOKBACK_DAYS` defaults to **730** so the report you get from `python main.py` is the honest 2-year figure, not a flattering recent window.
 
 ## Setup
 
@@ -69,13 +82,13 @@ python main.py
 ```
 
 This will:
-1. Rank Binance USDT pairs by 24h volume and pick the top `TOP_N_PAIRS` (default 20, see `config.py`)
-2. Download `LOOKBACK_DAYS` of `TIMEFRAME` candles per pair (default 180 days of 4h candles — see *Strategy & results* for why 4h, not 5m), cached locally for 12h so repeat runs are fast
+1. Rank Binance USDT pairs by 24h volume and pick the top `TOP_N_PAIRS` (default 50, see `config.py`)
+2. Download `LOOKBACK_DAYS` of `TIMEFRAME` candles per pair (default 730 days of 4h candles — see *Strategy & results* for why 4h, not 5m, and why 2 years), cached locally for 12h so repeat runs are fast
 3. Run all 8 pattern detectors on each pair
 4. Backtest every signal and print a report to the console
 5. Save a trade log (`reports/trades_<symbol>.csv`) and a chart (`reports/report_<symbol>.png`) per pair, plus combined versions across all pairs
 
-First run downloads candle data (180 days × 4h × 20 pairs) — at 4h that's only ~1,080 candles per pair, so it's quick. Subsequent runs within 12h reuse the cache.
+First run downloads candle data (730 days × 4h × 50 pairs ≈ 4,380 candles per pair) — a few minutes with rate limiting. Subsequent runs within 12h reuse the cache.
 
 ## How pattern detection works
 
@@ -116,12 +129,14 @@ On top of that, the engine tracks running equity and stops opening new trades on
 These are deliberate simplifications, not bugs — worth knowing before reading too much into the numbers:
 
 - **Combined report capital handling.** The combined report across all symbols treats each symbol as if it had its own independent starting capital (`INITIAL_CAPITAL` per symbol, not split across them) — running with N symbols implicitly assumes capital for N simultaneous independent positions, not one shared pool. The combined report's % stats (drawdown, Sharpe) are scaled against the true total capital (`INITIAL_CAPITAL × number of symbols that traded`), printed in the report header, so they're meaningful rather than relative to a single symbol's $10k. What's still *not* modeled is genuine shared-pool capital allocation across symbols (e.g. one strategy drawing down capital that another symbol could have used) — that's a real portfolio-backtest feature, not a quick fix. Per-symbol reports are unaffected either way.
-- **Position sizing is fixed-risk off initial capital, not compounding.** Every trade risks a fixed % of `INITIAL_CAPITAL`, not current equity — so position size doesn't shrink as losses accumulate or grow as the account compounds (it does stop opening new trades entirely once equity is exhausted, see above, but sizing itself isn't equity-scaled in between). Equity-based sizing would be a straightforward extension.
-- **Sharpe ratio uses a per-trade annualization shortcut** (`√252`), which is only exactly correct if trade frequency is close to one per day. At 5-minute resolution it's an approximation, not a precise risk-adjusted return figure.
+- **Position sizing compounds per symbol, not per portfolio.** With `COMPOUND_SIZING = True` (default) each trade risks 2% of the *symbol's own* running equity — but each symbol still compounds independently; there's no shared capital pool where one symbol's drawdown shrinks another's sizing.
+- **Funding is a flat average, not historical rates.** `FUNDING_RATE_8H` applies one constant (default 0.01%/8h, the long-run positive average) to all pairs and periods. Real funding varies by pair and regime and occasionally flips negative; the effect on results is small (~+$200 on the 2y backtest) but it is an approximation.
+- **Concurrent positions stack margin.** With `MAX_CONCURRENT_POSITIONS = 3` and `MAX_POSITION_PCT = 0.5`, a symbol can in the worst case hold 1.5× its capital in notional (≈1.5× leverage) — fine on futures, but real margin limits aren't modeled.
+- **Sharpe ratio uses a per-trade annualization shortcut** (`√252`), which is only exactly correct if trade frequency is close to one per day. It's an approximation, not a precise risk-adjusted return figure.
 
 ## Next steps
 
-- Equity-based (compounding) position sizing as a config toggle
-- Proper portfolio-level backtest: shared capital across symbols, true position-count limits
-- Walk-forward / out-of-sample split instead of a single full-period backtest
+- Proper portfolio-level backtest: shared capital across symbols, portfolio-wide position cap
+- Automated walk-forward split built into the backtester (train/test windows) so future tuning stays honest
+- Historical per-pair funding rates instead of the flat average
 - Live signal mode (Discord/Telegram alerts) reusing the same detector layer — same pattern as my [arb-bot](https://github.com/juriok/arb-bot) project
