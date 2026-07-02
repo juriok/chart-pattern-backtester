@@ -3,4 +3,5 @@ __pycache__/
 venv/
 cache/
 reports/
+state/
 .DS_Store

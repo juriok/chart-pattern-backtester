@@ -96,6 +96,31 @@ This will:
 
 First run downloads candle data (730 days × 4h × 50 pairs ≈ 4,380 candles per pair) — a few minutes with rate limiting. Subsequent runs within 12h reuse the cache.
 
+## Live paper trading
+
+`live.py` runs the exact backtest strategy forward on real closed 4h candles — same detectors, same config, same portfolio rules and cost model — but fills are simulated and logged instead of sent to an exchange. This is the forward test the backtest numbers have to survive.
+
+```bash
+python live.py           # daemon: wakes ~90s after every 4h candle close
+python live.py --once    # process the latest closed candle once, then exit
+```
+
+Each cycle: re-rank the top-`TOP_N_PAIRS` universe (open positions are managed even if their symbol drops out), fetch closed candles, settle exits (SL/TP/timeout on the just-closed candle), then act on new signals under the same slot/leverage caps as the backtest. Paper equity, open positions and a dedup ledger persist in `state/paper_state.json` (restart-safe); every closed trade appends to `state/paper_trades.csv` with running equity. Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` for open/close alerts; otherwise everything just logs to stdout.
+
+### Deploying to the server
+
+Same pattern as the arb-bot (Docker Compose):
+
+```bash
+# from local machine
+scp -r config.py live.py main.py requirements.txt Dockerfile docker-compose.yml data patterns backtest report misko@<server>:/home/misko/pattern-bot/
+# on the server
+cd /home/misko/pattern-bot && sudo docker compose up --build -d
+sudo docker logs -f pattern-bot        # watch it trade
+```
+
+The `state/` volume keeps the paper account across container rebuilds. Judge the forward test after ~2–3 months: the thing to compare is live PF and win rate against the backtest's per-quarter range (PF ~1.0–1.4), not the equity headline.
+
 ## How pattern detection works
 
 Pivots (local highs/lows) are found with `scipy.signal.argrelextrema` over a configurable window (`PIVOT_ORDER`). Each detector looks for a specific geometric arrangement of pivots — e.g. Head & Shoulders requires three consecutive pivot highs where the middle one is prominently higher than both outer ones (`MIN_HEAD_PROMINENCE`) and the outer two are roughly symmetric (`PATTERN_TOLERANCE`), with the neckline computed as the (possibly sloped) line between the two troughs on either side of the head. A signal fires when price closes through the relevant level — neckline, valley, channel line, or resistance/support — within a bounded window after the pattern completes, with an optional volume confirmation filter.
