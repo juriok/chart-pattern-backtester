@@ -78,16 +78,24 @@ def append_trade(row: dict) -> None:
 
 def notify(msg: str) -> None:
     log.info(msg)
+
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     chat  = os.environ.get('TELEGRAM_CHAT_ID')
-    if not token or not chat:
-        return
-    try:
-        import requests
-        requests.post(f'https://api.telegram.org/bot{token}/sendMessage',
-                      json={'chat_id': chat, 'text': msg}, timeout=10)
-    except Exception as e:                                   # alerts must never kill the loop
-        log.warning(f'Telegram alert failed: {e}')
+    if token and chat:
+        try:
+            import requests
+            requests.post(f'https://api.telegram.org/bot{token}/sendMessage',
+                          json={'chat_id': chat, 'text': msg}, timeout=10)
+        except Exception as e:                               # alerts must never kill the loop
+            log.warning(f'Telegram alert failed: {e}')
+
+    webhook = os.environ.get('DISCORD_WEBHOOK_URL')
+    if webhook:
+        try:
+            import requests
+            requests.post(webhook, json={'content': msg}, timeout=10)
+        except Exception as e:
+            log.warning(f'Discord alert failed: {e}')
 
 
 # ── Market data ──────────────────────────────────────────────────────────────

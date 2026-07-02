@@ -5,8 +5,10 @@ services:
     restart: unless-stopped
     environment:
       - TZ=UTC
-      # Optional Telegram alerts — set in .env or here:
-      # - TELEGRAM_BOT_TOKEN=...
-      # - TELEGRAM_CHAT_ID=...
+      # Optional alerts — put values in a .env file next to this compose file
+      # (compose reads it automatically); leave unset to log to stdout only.
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
     volumes:
       - ./state:/app/state

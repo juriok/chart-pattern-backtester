@@ -105,7 +105,7 @@ python live.py           # daemon: wakes ~90s after every 4h candle close
 python live.py --once    # process the latest closed candle once, then exit
 ```
 
-Each cycle: re-rank the top-`TOP_N_PAIRS` universe (open positions are managed even if their symbol drops out), fetch closed candles, settle exits (SL/TP/timeout on the just-closed candle), then act on new signals under the same slot/leverage caps as the backtest. Paper equity, open positions and a dedup ledger persist in `state/paper_state.json` (restart-safe); every closed trade appends to `state/paper_trades.csv` with running equity. Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` for open/close alerts; otherwise everything just logs to stdout.
+Each cycle: re-rank the top-`TOP_N_PAIRS` universe (open positions are managed even if their symbol drops out), fetch closed candles, settle exits (SL/TP/timeout on the just-closed candle), then act on new signals under the same slot/leverage caps as the backtest. Paper equity, open positions and a dedup ledger persist in `state/paper_state.json` (restart-safe); every closed trade appends to `state/paper_trades.csv` with running equity. For open/close alerts set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` and/or `DISCORD_WEBHOOK_URL` (a `.env` file next to `docker-compose.yml` is picked up automatically); otherwise everything just logs to stdout.
 
 ### Deploying to the server
 
