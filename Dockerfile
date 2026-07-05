@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY config.py live.py main.py ./
+COPY config.py live.py main.py dashboard.py ./
 COPY data/ ./data/
 COPY patterns/ ./patterns/
 COPY backtest/ ./backtest/

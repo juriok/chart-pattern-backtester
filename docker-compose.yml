@@ -10,5 +10,9 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+    ports:
+      # Host 8085 -> container 8080. 8081=arb-bot, 8082/8083=freq-bots,
+      # 8084=funding-bot; dashboard URL is http://<tailscale-ip>:8085
+      - "8085:8080"
     volumes:
       - ./state:/app/state

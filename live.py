@@ -160,8 +160,9 @@ def check_exits(state: dict, candles: dict) -> None:
         if str(ts) == pos.get('last_seen_bar'):
             remaining.append(pos)               # candle already processed
             continue
-        pos['bars_held']    = pos.get('bars_held', 0) + 1
+        pos['bars_held']     = pos.get('bars_held', 0) + 1
         pos['last_seen_bar'] = str(ts)
+        pos['last_price']    = float(last['close'])   # dashboard mark-to-last-close
 
         high, low, open_ = float(last['high']), float(last['low']), float(last['open'])
         if pos['direction'] == 'long':
@@ -303,6 +304,9 @@ def main():
     if '--once' in sys.argv:
         run_cycle(state)
         return
+
+    import dashboard
+    dashboard.start(state)      # reads the same dict run_cycle mutates
 
     while True:
         wait = seconds_to_next_close()
