@@ -68,10 +68,25 @@ def save_state(state: dict) -> None:
     os.replace(tmp, STATE_PATH)
 
 
+# Canonical trade-log schema. Rows are ALWAYS aligned to the file's existing
+# header (or this list for a fresh file) — position dicts gain fields over
+# time (e.g. last_price for the dashboard), and appending raw dicts once
+# corrupted the CSV with rows wider than the header.
+TRADE_FIELDS = ['symbol', 'pattern', 'direction', 'entry_ts', 'entry_price',
+                'sl', 'tp', 'qty', 'bars_held', 'exit_price', 'exit_ts',
+                'pnl', 'result', 'equity_after']
+
+
 def append_trade(row: dict) -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
-    header = not os.path.exists(TRADES_PATH)
-    pd.DataFrame([row]).to_csv(TRADES_PATH, mode='a', header=header, index=False)
+    exists = os.path.exists(TRADES_PATH)
+    if exists:
+        with open(TRADES_PATH) as f:
+            cols = f.readline().strip().split(',')
+    else:
+        cols = TRADE_FIELDS
+    pd.DataFrame([row]).reindex(columns=cols).to_csv(
+        TRADES_PATH, mode='a', header=not exists, index=False)
 
 
 # ── Alerts ───────────────────────────────────────────────────────────────────

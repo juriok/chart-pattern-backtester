@@ -42,18 +42,27 @@ def snapshot() -> dict:
     stats = {'n': 0, 'wins': 0, 'win_rate': None, 'pf': None,
              'tp': 0, 'sl': 0, 'timeout': 0}
     if os.path.exists(TRADES_PATH):
-        df = pd.read_csv(TRADES_PATH)
+        try:
+            # engine='python' + on_bad_lines tolerates schema drift in old
+            # files; a corrupt trade log must never blank the dashboard.
+            df = pd.read_csv(TRADES_PATH, engine='python', on_bad_lines='warn')
+        except Exception as e:
+            log.warning(f'trade log unreadable: {e}')
+            df = pd.DataFrame()
+        df = df.where(pd.notna(df), None)      # NaN is not valid JSON
         if len(df):
+            pnl = pd.to_numeric(df['pnl'], errors='coerce').fillna(0.0)
             stats['n']    = int(len(df))
-            wins          = df['pnl'] > 0
+            wins          = pnl > 0
             stats['wins'] = int(wins.sum())
             stats['win_rate'] = round(100 * wins.mean(), 1)
-            gp = df.loc[df['pnl'] > 0, 'pnl'].sum()
-            gl = abs(df.loc[df['pnl'] <= 0, 'pnl'].sum())
+            gp = pnl[pnl > 0].sum()
+            gl = abs(pnl[pnl <= 0].sum())
             stats['pf'] = round(float(gp / gl), 2) if gl > 0 else None
             for k in ('tp', 'sl', 'timeout'):
                 stats[k] = int((df['result'] == k).sum())
-            equity_curve += df['equity_after'].tolist()
+            eq = pd.to_numeric(df['equity_after'], errors='coerce').dropna()
+            equity_curve += eq.tolist()
             trades = df.tail(50).iloc[::-1].to_dict('records')   # newest first
 
     equity = state.get('equity', config.INITIAL_CAPITAL)
@@ -130,7 +139,10 @@ function nextClose(tfHours){
   return new Date(Math.floor(now/step+1)*step+90e3);
 }
 async function refresh(){
-  const r = await fetch('/api/status'); const d = await r.json();
+ try {
+  const r = await fetch('/api/status');
+  if(!r.ok) throw new Error('API returned HTTP '+r.status);
+  const d = await r.json();
   const tfH = parseFloat(d.timeframe)* (d.timeframe.endsWith('h')?1:1/60);
   document.getElementById('sub').textContent =
     `last cycle: ${d.last_cycle ?? 'none yet'} · next candle close ≈ ` +
@@ -180,6 +192,9 @@ async function refresh(){
   drawCurve(d.equity_curve, d.initial);
   document.getElementById('band').textContent =
     'Backtest expectation band: ' + d.backtest_band;
+ } catch(e) {
+  document.getElementById('sub').textContent = '⚠ dashboard error: ' + e.message;
+ }
 }
 function drawCurve(eq, initial){
   const c = document.getElementById('curve');
